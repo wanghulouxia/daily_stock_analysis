@@ -31,13 +31,13 @@ jobs:
   test-api:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
-      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
 
     steps:
       - name: 📋 显示 API 配置信息
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
         run: |
           echo "=========================================="
           echo "LLM API 配置检查"
@@ -70,6 +70,9 @@ jobs:
         env:
           TEST_MODEL: ${{ github.event.inputs.test_model }}
           TEST_BASE_URL: ${{ github.event.inputs.test_base_url }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
         run: |
           cat > test_api.py << 'EOF'
           import os
@@ -199,6 +202,9 @@ jobs:
 
       - name: 📊 测试总结
         if: always()
+        env:
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
         run: |
           echo "=========================================="
           echo "测试完成总结"

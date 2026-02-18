@@ -31,6 +31,10 @@ jobs:
   test-api:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
 
     steps:
       - name: 📋 显示 API 配置信息

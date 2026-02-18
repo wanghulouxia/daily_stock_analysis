@@ -1,0 +1,212 @@
+name: Test NVIDIA API
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_model:
+        description: '要测试的模型'
+        required: true
+        default: 'z-ai/glm4.7'
+        type: choice
+        options:
+          - z-ai/glm4.7
+          - z-ai/glm5
+          - deepseek-ai/deepseek-v3.1
+          - qwen/qwen2.5-7b-instruct
+          - meta/llama-3.3-70b-instruct
+          - mistralai/mistral-large-2-instruct
+          - google/gemma-2-27b-it
+      
+      test_base_url:
+        description: '测试的 Base URL'
+        required: true
+        default: 'nvidia-int'
+        type: choice
+        options:
+          - nvidia-int
+          - nvidia-ai
+          - all
+
+jobs:
+  test-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 📋 显示 API 配置信息
+        run: |
+          echo "=========================================="
+          echo "LLM API 配置检查"
+          echo "=========================================="
+          echo "✅ OPENAI_API_KEY 长度: ${#OPENAI_API_KEY}"
+          echo "✅ OPENAI_API_KEY 前缀: ${OPENAI_API_KEY:0:20}..."
+          echo "✅ OPENAI_API_KEY 后缀: ...${OPENAI_API_KEY: -10}"
+          
+          echo ""
+          echo "📍 OPENAI_BASE_URL:"
+          echo "   完整值: $OPENAI_BASE_URL"
+          echo "   域名: $(echo $OPENAI_BASE_URL | sed 's|https\?://||' | cut -d'/' -f1)"
+          echo "   端点: $(echo $OPENAI_BASE_URL | sed 's|https\?://||' | cut -d'/' -f2)"
+          
+          echo ""
+          echo "🤖 OPENAI_MODEL: $OPENAI_MODEL"
+          echo "=========================================="
+
+      - name: 🐍 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install openai
+
+      - name: 🧪 使用 Python OpenAI 客户端测试
+        env:
+          TEST_MODEL: ${{ github.event.inputs.test_model }}
+          TEST_BASE_URL: ${{ github.event.inputs.test_base_url }}
+        run: |
+          cat > test_api.py << 'EOF'
+          import os
+          from openai import OpenAI
+          
+          model = os.environ['TEST_MODEL']
+          base_url_input = os.environ['TEST_BASE_URL']
+          api_key = os.environ['OPENAI_API_KEY']
+          configured_url = os.environ.get('OPENAI_BASE_URL', '')
+          
+          print("==========================================")
+          print("Python OpenAI 客户端测试")
+          print("==========================================")
+          print(f"配置的 Base URL: {configured_url}")
+          print(f"配置的 Model: {os.environ.get('OPENAI_MODEL', 'N/A')}")
+          print()
+          
+          if base_url_input == 'nvidia-int':
+              test_urls = ['https://integrate.api.nvidia.com/v1']
+          elif base_url_input == 'nvidia-ai':
+              test_urls = ['https://ai.api.nvidia.com/v1']
+          elif base_url_input == 'all':
+              test_urls = [
+                  configured_url if configured_url else 'SKIP',
+                  'https://integrate.api.nvidia.com/v1',
+                  'https://ai.api.nvidia.com/v1'
+              ]
+              test_urls = [u for u in test_urls if u and u != 'SKIP']
+          else:
+              test_urls = [configured_url] if configured_url else []
+          
+          success = False
+          for url in test_urls:
+              if not url:
+                  continue
+              print(f"测试 URL: {url}")
+              print(f"测试 Model: {model}")
+              
+              try:
+                  client = OpenAI(base_url=url, api_key=api_key)
+                  response = client.chat.completions.create(
+                      model=model,
+                      messages=[{"role": "user", "content": "测试消息：你好，请用一句话回复"}],
+                      temperature=0.7,
+                      max_tokens=50
+                  )
+                  
+                  content = response.choices[0].message.content
+                  print(f"✅ 成功! HTTP 200")
+                  print(f"响应内容: {content}")
+                  print(f"返回模型: {response.model}")
+                  print(f"Token用量: {response.usage.total_tokens}")
+                  success = True
+                  break
+                  
+              except Exception as e:
+                  error_msg = str(e)
+                  print(f"❌ 失败: {error_msg[:200]}")
+                  if '404' in error_msg:
+                      print("   → 模型不存在或无权限访问")
+                  elif '401' in error_msg:
+                      print("   → API Key 无效")
+                  elif '403' in error_msg:
+                      print("   → 权限不足")
+                  print()
+          
+          if not success:
+              print("==========================================")
+              print("所有 URL 测试失败，请检查配置")
+              print("==========================================")
+              exit(1)
+          else:
+              print("==========================================")
+              print("测试成功!")
+              print("==========================================")
+          EOF
+          
+          python test_api.py
+
+      - name: 🌐 使用 curl 补充测试
+        if: github.event.inputs.test_base_url == 'all'
+        run: |
+          echo "=========================================="
+          echo "curl 补充测试"
+          echo "=========================================="
+          
+          api_key="$OPENAI_API_KEY"
+          model="${{ github.event.inputs.test_model }}"
+          
+          test_urls=(
+            "NVIDIA Integrate|https://integrate.api.nvidia.com/v1"
+            "NVIDIA AI|https://ai.api.nvidia.com/v1"
+          )
+          
+          for url_info in "${test_urls[@]}"; do
+            IFS='|' read -r name url <<< "$url_info"
+            
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "测试: $name"
+            echo "URL: $url"
+            
+            response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$url/chat/completions" \
+              -H "Authorization: Bearer $api_key" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"model\": \"$model\",
+                \"messages\": [{\"role\": \"user\", \"content\": \"Hi\"}],
+                \"max_tokens\": 20
+              }")
+            
+            http_code=$(echo "$response" | grep "HTTP_CODE" | cut -d':' -f2)
+            body=$(echo "$response" | grep -v "HTTP_CODE")
+            
+            if [[ "$http_code" == "200" ]]; then
+              content=$(echo "$body" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["choices"][0]["message"]["content"])' 2>/dev/null || echo "解析失败")
+              echo "✅ 成功 (HTTP 200)"
+              echo "响应: $content"
+            else
+              echo "❌ 失败 (HTTP $http_code)"
+              echo "详情: $body"
+            fi
+          done
+          
+          echo ""
+          echo "=========================================="
+
+      - name: 📊 测试总结
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "测试完成总结"
+          echo "=========================================="
+          echo ""
+          echo "✅ 配置的 OPENAI_BASE_URL: $OPENAI_BASE_URL"
+          echo "✅ 配置的 OPENAI_MODEL: $OPENAI_MODEL"
+          echo ""
+          echo "如果测试成功，说明："
+          echo "  1. API Key 有效"
+          echo "  2. 网络连接正常"
+          echo "  3. 模型可用"
+          echo ""
+          echo "建议：将调试步骤添加到 daily_analysis.yml"
+          echo "=========================================="

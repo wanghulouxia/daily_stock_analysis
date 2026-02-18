@@ -51,6 +51,32 @@ jobs:
         run: |
           mkdir -p data logs reports
       
+      - name: 🔍 调试 LLM API 配置
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
+        run: |
+          echo "=========================================="
+          echo "🔍 LLM API 配置调试"
+          echo "=========================================="
+          echo ""
+          echo "📋 OpenAI 兼容 API 配置:"
+          echo "   API Key 长度: ${#OPENAI_API_KEY}"
+          echo "   API Key 前缀: ${OPENAI_API_KEY:0:20}..."
+          echo "   API Key 后缀: ...${OPENAI_API_KEY: -10}"
+          echo ""
+          echo "📍 Base URL:"
+          echo "   完整值: $OPENAI_BASE_URL"
+          if [ -n "$OPENAI_BASE_URL" ]; then
+            echo "   域名: $(echo $OPENAI_BASE_URL | sed 's|https\?://||' | cut -d'/' -f1)"
+          else
+            echo "   域名: (未配置)"
+          fi
+          echo ""
+          echo "🤖 Model: $OPENAI_MODEL"
+          echo "=========================================="
+      
       - name: 执行股票分析
         env:
           # ==========================================
